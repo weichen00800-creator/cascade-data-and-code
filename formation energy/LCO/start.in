@@ -1,0 +1,58 @@
+# LAMMPS脚本：TiVTa三元合金空位形成能计算
+# 方法：使用元素的平均原子能量作为化学势，多位置采样求平均
+#----初始化----
+units       metal    # 单位制
+dimension   3        # 维度
+boundary    p p p    # 边界条件
+atom_style  atomic   # 原子类型
+timestep    0.001
+neighbor     2.0 bin
+neigh_modify  every 1 delay 10 check yes
+
+read_data 10K.data
+
+#---模拟环境中的原子信息
+mass 1  47.867  #Ti
+mass 2  50.9415  #V
+mass 3  180.9  #Ta
+
+#重新定义元素组
+group Ti type 1
+group V type 2
+group Ta type 3
+
+#----力场/势函数---
+pair_style nep
+pair_coeff * * TiVTa.txt Ti V Ta
+
+#保存模型
+min_style cg
+minimize 1.0e-8 1.0e-10 1000 10000
+write_data TiVTaSRO_minimized.data
+
+#计算各组各原子能量
+compute peratomTi Ti pe/atom
+compute peratomV V pe/atom
+compute peratomTa Ta pe/atom
+
+#计算平均值
+compute aveTi Ti reduce ave c_peratomTi
+compute aveV V reduce ave c_peratomV
+compute aveTa Ta reduce ave c_peratomTa
+thermo 10
+thermo_style custom step pe  c_aveTi c_aveV c_aveTa
+run 0
+
+#储存势能
+variable mu_Ti equal c_aveTi
+variable mu_V equal c_aveV
+variable mu_Ta equal c_aveTa
+
+#存储完美晶体能量和原子数
+variable E_perfect equal pe
+
+#打印结果
+print "variable E_perfect equal ${E_perfect}" append vac_params.in
+print "variable mu_Ti equal ${mu_Ti}" append vac_params.in
+print "variable mu_V equal ${mu_V}" append vac_params.in
+print "variable mu_Ta equal ${mu_Ta}" append vac_params.in
