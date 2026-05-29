@@ -1,0 +1,27 @@
+#----初始化----
+units       metal    # 单位制
+dimension   3        # 维度
+boundary    p p p    # 边界条件
+atom_style  atomic   # 原子类型
+timestep  0.001
+neighbor  0.3 bin
+variable T0 equal 10
+
+read_restart    restart.mcmd.3600000
+
+reset_timestep 3600000
+
+#----力场/势函数---
+pair_style nep
+pair_coeff * * TiVTa.txt Ti V Ta
+
+#设置输出信息/格式
+thermo 100
+thermo_style custom step lx ly lz press pxx pyy pzz pe temp etotal
+
+#MC (swap atoms)
+fix 1 all npt temp ${T0} ${T0} 0.1 iso 0.0 0.0 1
+dump 1 all custom 5000 swaped-10K.data id type x y z
+run 100000
+
+write_data 10K.data
