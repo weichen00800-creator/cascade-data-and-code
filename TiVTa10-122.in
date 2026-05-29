@@ -1,0 +1,102 @@
+#定义循环变量
+variable i loop 5 #一般做10到20次
+variable seed index 333333 666666 999999 336699 333666999
+#----初始化----
+units       metal    # 单位制
+dimension   3        # 维度
+boundary    p p p    # 边界条件
+atom_style  atomic   # 原子类型
+timestep  0.001
+neighbor  0.3 bin
+variable T0 equal 300
+variable boxsize equal 52 # 模拟区域大小
+
+lattice     bcc 3.2102 #晶格常数
+region      box1 block 0 ${boxsize} 0 ${boxsize} 0 ${boxsize} # 模拟区域大小=边界值30*晶格常数3.1 
+create_box  3 box1 #设置原子种类
+create_atoms 1 region box1 #向模拟区添加原子
+
+set type 1 type/ratio 2 0.3333333 ${seed}
+set type 1 type/ratio 3 0.5 ${seed}
+
+#---模拟环境中的原子信息
+mass 1  47.867  #Ti
+mass 2  50.9415  #V
+mass 3  180.9  #Ta
+
+#----设置PKA----
+region rpka sphere 26 26 26 0.1 units lattice  # 更小的半径确保单个原子 
+group pka region rpka            
+set group pka type 2
+
+#----创建边界恒温区（2层原子）----
+variable boxsize_minus_2 equal ${boxsize}-2
+region boundary1 block 0 2 0 ${boxsize} 0 ${boxsize} units lattice    # -x边界
+region boundary2 block ${boxsize_minus_2} ${boxsize} 0 ${boxsize} 0 ${boxsize} units lattice  # +x边界
+region boundary3 block 2 ${boxsize_minus_2} 0 2 0 ${boxsize} units lattice    # -y边界
+region boundary4 block 2 ${boxsize_minus_2} ${boxsize_minus_2} ${boxsize} 0 ${boxsize} units lattice  # +y边界
+region boundary5 block 2 ${boxsize_minus_2} 2 ${boxsize_minus_2} 0 2 units lattice    # -z边界
+region boundary6 block 2 ${boxsize_minus_2} 2 ${boxsize_minus_2} ${boxsize_minus_2} ${boxsize} units lattice  # +z边界
+region boundary union 6 boundary1 boundary2 boundary3 boundary4 boundary5 boundary6
+group boundary region boundary
+group inner subtract all boundary  # 内部区域
+
+#----力场/势函数---
+pair_style nep
+pair_coeff * * TiVTa.txt Ti V Ta
+
+#保存模型
+minimize 1.0e-8 1.0e-10 1000 10000 # 共轭梯度法最小化能量
+write_data TiVTa.${i}.minimized.xyz      # 保存最小化后的结构
+
+thermo 1000 #每1000步输出一条信息
+thermo_style custom step time lx ly lz press pxx pyy pzz pe temp
+
+dump 1 all custom 1000 chiyu.${i}.xyz id type x y z
+#----每次级联前初始弛豫（10 ps）----
+velocity all create ${T0} ${seed} rot yes dist gaussian #初始速度-种子序列
+fix 1 all npt temp ${T0} ${T0} 0.1 iso 0.0 0.0 1.0
+run 10000
+unfix 1
+undump 1
+
+reset_timestep 0
+
+thermo 100 #每1000步输出一条信息
+thermo_style custom step time lx ly lz press pxx pyy pzz pe temp
+
+dump 2 all custom 100 cascade.${i}.xyz id type x y z
+
+variable E_pka equal 10000               # 动能
+variable m_v equal 50.9415                # 摩尔质量(g/mol)
+variable v_mass equal ${m_v}*1e-3/6.02214076e23  # 原子质量(kg/atom)
+variable v_pka equal sqrt(2*${E_pka}*1.602e-19/${v_mass})*1e-2  # 转换为Å/ps
+variable va equal ${v_pka}/sqrt(9)     # 速度分量归一化<122>
+variable vb equal 2.0*${va}
+variable vc equal 2.0*${va}
+velocity pka set ${va} ${vb} ${vc} units box  #122 direction
+
+fix 2 inner nve    # 内部微正则系综
+fix 3 boundary nvt temp ${T0} ${T0} 0.1  # 边界恒温控制
+
+#1
+timestep   0.00001              
+run        10000                   #run 0.1 ps，每0.001ps输出一次
+#2
+timestep   0.0001                    
+run        9000                    #run 0.9 ps，每0.01ps输出一次
+#3
+timestep   0.001                    
+run        9000                    #run 9 ps，每0.1ps输出一次
+#4
+timestep   0.002                    
+run        15000                    #run 30 ps，每0.2ps输出一次
+#4
+timestep   0.01                    
+run        6000                    #run 60 ps，每1ps输出一次
+
+
+clear
+next i
+next seed
+jump TiVTa.in
