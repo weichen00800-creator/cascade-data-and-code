@@ -1,0 +1,56 @@
+# LAMMPS脚本：TiVTa三元合金间隙形成能计算
+# 方法：使用元素的平均原子能量作为化学势，多位置采样
+variable n_samples equal 1000
+variable i loop ${n_samples}
+
+label V_loop
+
+clear
+
+include vac_params.in
+
+units       metal    # 单位制
+dimension   3        # 维度
+boundary    p p p    # 边界条件
+atom_style  atomic   # 原子类型
+lattice  bcc ${a0}   # 晶格常数
+timestep    0.001
+
+# 读取完美晶体结构
+read_data TiVTaSRO_minimized.data
+
+# 重新定义元素组
+group Ti type 1
+group V type 2
+group Ta type 3
+
+#----力场/势函数---
+pair_style nep
+pair_coeff * * TiVTa.txt Ti V Ta
+
+#定义目标索引
+variable target_index equal v_i  # 提取第i个原子坐标
+print "${target_index}" append index.txt
+
+#调用Python脚本提取原子坐标
+shell "python extract_atom_position.py position.txt index.txt"
+
+#包含生成的变量定义
+include temp.in
+
+#验证提取结果
+shell "rm temp.in index.txt"
+
+create_atoms 2 single ${lx} ${ly} ${lz} units box
+#write_dump Ti custom Ti.dump id type x y z#验证是否插入原子到指定位置
+#弛豫含空位结构
+min_style cg
+minimize 1.0e-8 1.0e-10 1000 10000
+run 0
+
+#计算间隙形成能
+variable E_defect equal pe
+variable Evf equal ${E_defect}-${E_perfect}-${mu_V}
+print "Sample:${target_index} add V atom , Evf = ${Evf} eV" append V_INI_eng.txt
+next i
+jump SELF V_loop
