@@ -1,0 +1,26 @@
+include vac_params.in
+
+units       metal    # 单位制
+dimension   3        # 维度
+boundary    p p p    # 边界条件
+atom_style  atomic   # 原子类型
+lattice  bcc ${a0}   # 晶格常数
+timestep    0.001
+
+# 读取完美晶体结构
+read_data V_minimized.data
+
+#----力场/势函数---
+pair_style nep
+pair_coeff * * TiVTa.txt V
+
+create_atoms 1 single 0.755 1.51 0.0 units box
+#弛豫含空位结构
+min_style cg
+minimize 1.0e-8 1.0e-10 1000 10000
+run 0
+
+#计算间隙形成能
+variable E_defect equal pe
+variable Evf equal ${E_defect}-${E_perfect}-${mu_V}
+print " Evf = ${Evf} eV" append V_INI_eng.txt

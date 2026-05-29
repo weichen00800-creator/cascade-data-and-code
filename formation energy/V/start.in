@@ -1,0 +1,54 @@
+# LAMMPS脚本：TiVTa三元合金间隙形成能计算
+# 方法：使用元素的平均原子能量作为化学势，多位置采样
+#----初始化----
+units       metal    # 单位制
+dimension   3        # 维度
+boundary    p p p    # 边界条件
+atom_style  atomic   # 原子类型
+timestep    0.001
+neighbor    2.0 bin
+neigh_modify  every 1 delay 10 check yes
+
+#参数设置
+variable a0 equal 3.02          # 晶格常数
+variable size equal 20            # 单方向晶胞数
+variable n_atoms equal ${size}*${size}*${size}*2  # BCC结构原子数
+
+#----模拟区域信息设置---- 
+lattice     bcc ${a0} #晶格常数
+region      box1 block 0 ${size} 0 ${size} 0 ${size} # 模拟区域大小
+create_box  1 box1 #设置原子种类
+create_atoms 1 region box1 #向模拟区添加原子
+
+#模拟环境中的原子信息
+mass 1 50.9415  #V
+
+#----力场/势函数---
+pair_style nep
+pair_coeff * * TiVTa.txt V
+
+#保存模型
+min_style cg
+minimize 1.0e-8 1.0e-10 1000 10000
+write_data V_minimized.data
+
+#计算各组各原子能量
+compute peratomV all pe/atom
+
+#计算平均值
+compute aveV all reduce ave c_peratomV
+
+thermo 10
+thermo_style custom step pe  c_aveV
+run 0
+
+#储存势能
+variable mu_V equal c_aveV
+
+#存储完美晶体能量和原子数
+variable E_perfect equal pe
+
+#打印结果
+print "variable E_perfect equal ${E_perfect}" append vac_params.in
+print "variable mu_V equal ${mu_V}" append vac_params.in
+print "variable a0 equal ${a0}" append vac_params.in
