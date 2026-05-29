@@ -1,0 +1,64 @@
+# LAMMPS脚本：TiVTa三元合金空位形成能计算
+# 方法：使用元素的平均原子能量作为化学势，多位置采样
+variable n_samples equal 1000
+variable i loop ${n_samples}
+
+label Ta_loop
+
+clear
+
+include vac_params.in
+
+units       metal    # 单位制
+dimension   3        # 维度
+boundary    p p p    # 边界条件
+atom_style  atomic   # 原子类型
+lattice  bcc ${a0}   #晶格常数
+timestep    0.001
+
+# 读取完美晶体结构
+read_data TiVTa_minimized.data
+
+# 重新定义元素组
+group Ti type 1
+group V type 2
+group Ta type 3
+
+#----力场/势函数---
+pair_style nep
+pair_coeff * * TiVTa.txt Ti V Ta
+
+# 选择要移除的Ti原子(内部区域)
+region inside block 2 18 2 18 2 18 units lattice
+group group_inside region inside
+group Ta_inside intersect Ta group_inside
+write_dump Ta_inside custom Ta_inside.dump id type x y z
+run 0
+
+#定义目标索引
+variable target_index equal v_i  # 提取第一个原子的ID
+print "${target_index}" append index.txt
+
+#调用Python脚本提取原子ID
+shell "python extract_atom_id.py Ta_inside.dump index.txt"
+
+#包含生成的变量定义
+include target_id.in
+
+#验证提取结果
+shell "rm target_id.in index.txt"
+group degroup id ${target_id}
+delete_atoms group degroup
+
+#弛豫含空位结构
+min_style cg
+minimize 1.0e-8 1.0e-10 1000 10000
+run 0
+
+#计算空位形成能
+variable E_defect equal pe
+variable Evf equal ${E_defect}-${E_perfect}+${mu_Ta}
+print "Sample:${target_index} Removed Ti atom id:${target_id}, Evf = ${Evf} eV" append Ta_VAC_eng.txt
+
+next i
+jump SELF Ta_loop
